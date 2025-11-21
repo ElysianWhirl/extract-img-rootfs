@@ -178,19 +178,23 @@ jobs:
         name: ${{ github.event.inputs.rename }}-rootfs
         path: img/${{ github.event.inputs.rename }}-rootfs.tar.gz
 
-    - name: Create release with assets
+    - name: Set release tag
+      id: tag
+      run: echo "tag_name=extract-$(date +%Y%m%d-%H%M)" >> $GITHUB_OUTPUT
+
+    - name: Create release and upload assets
       uses: svenstaro/upload-release-action@v2
-      if: env.PACKAGED_STATUS == 'success'
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
         file: img/*
-        tag: "extract-$(date +%Y%m%d-%H%M)"
+        tag: ${{ steps.tag.outputs.tag_name }}
         file_glob: true
         overwrite: true
         body: |
-          Source URL: ${{ github.event.inputs.img_url }}
-          File Type: ${{ github.event.inputs.type_file }}
-          Prefix: ${{ github.event.inputs.rename }}
+          Firmware extracted from:
+          - URL: ${{ github.event.inputs.img_url }}
+          - Type: ${{ github.event.inputs.type_file }}
+          - Name: ${{ github.event.inputs.rename }}
 
     - name: Cleanup old workflow runs
       uses: GitRML/delete-workflow-runs@main
