@@ -39,14 +39,22 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Set up environment
+    - name: Set up environment (with Rust + mediafire-rs)
       run: |
         sudo timedatectl set-timezone "$TZ"
         sudo apt-get update -qq
         sudo apt-get install -y wget python3 python3-pip p7zip-full lsb-release
 
-        # Install Python tools
-        pip3 install --no-cache-dir gdown mediafire-dl
+        # Install gdown for Google Drive
+        pip3 install --no-cache-dir gdown
+
+        # Install Rust
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        export PATH="$HOME/.cargo/bin:$PATH"
+
+        # Install mediafire-rs
+        cargo install mediafire_rs --locked
 
         # Install MegaCMD
         DISTRIB_RELEASE=$(lsb_release -rs)
@@ -78,17 +86,22 @@ jobs:
           gdown "$FILE_ID" -O "file.$TYPE_FILE"
 
         elif [[ "$IMG_URL" == *"mediafire.com"* ]]; then
-          mediafire-dl --quiet "$IMG_URL"
-          # Rename the downloaded file to standard name
-          mv *.${TYPE_FILE} "file.$TYPE_FILE" 2>/dev/null || { echo "❌ No .${TYPE_FILE} file found after MediaFire download"; exit 1; }
-
-        elif [[ "$IMG_URL" == *"mega.nz"* ]]; then
-          mega-get "$IMG_URL" .
-          # Mega may output original filename — rename it
+          mediafire-rs "$IMG_URL"
+          # mediafire-rs menyimpan file dengan nama asli → rename ke format standar
           if [ -f *."$TYPE_FILE" ]; then
             mv *."$TYPE_FILE" "file.$TYPE_FILE"
           else
-            echo "❌ Expected file with extension .$TYPE_FILE not found in Mega download"
+            echo "❌ Expected .$TYPE_FILE file not found after mediafire-rs download"
+            ls -la
+            exit 1
+          fi
+
+        elif [[ "$IMG_URL" == *"mega.nz"* ]]; then
+          mega-get "$IMG_URL" .
+          if [ -f *."$TYPE_FILE" ]; then
+            mv *."$TYPE_FILE" "file.$TYPE_FILE"
+          else
+            echo "❌ Expected .$TYPE_FILE file not found in Mega download"
             ls -la
             exit 1
           fi
@@ -111,8 +124,8 @@ jobs:
       run: |
         set -e
         mkdir -p boot rootfs img
-
         cd download
+
         if [ "$TYPE_FILE" = "img.gz" ]; then
           gunzip -f file.img.gz
         elif [ "$TYPE_FILE" = "img.xz" ]; then
@@ -127,27 +140,22 @@ jobs:
           exit 1
         fi
 
-        # Setup loop device
         LOOP_DEV=$(sudo losetup -fP --show file.img)
         echo "📌 Loop device: $LOOP_DEV"
 
-        # Mount partitions
         sudo mkdir -p ../boot ../rootfs
         sudo mount "${LOOP_DEV}p1" ../boot
         sudo mount "${LOOP_DEV}p2" ../rootfs
 
-        # Create tar.gz archives
         (cd ../boot && sudo tar -czf "../img/${RENAME}-boot.tar.gz" .)
         (cd ../rootfs && sudo tar -czf "../img/${RENAME}-rootfs.tar.gz" .)
 
-        # Cleanup
         sudo umount ../boot ../rootfs || true
         sudo losetup -d "$LOOP_DEV" || true
 
         echo "PACKAGED_STATUS=success" >> "$GITHUB_ENV"
-        echo "✅ Extraction and packaging completed"
 
-    - name: Upload boot artifact
+    - name: Upload artifacts
       uses: actions/upload-artifact@v4
       if: env.PACKAGED_STATUS == 'success'
       with:
@@ -161,7 +169,7 @@ jobs:
         name: ${{ github.event.inputs.rename }}-rootfs
         path: img/${{ github.event.inputs.rename }}-rootfs.tar.gz
 
-    - name: Create GitHub release and upload assets
+    - name: Create release
       uses: svenstaro/upload-release-action@v2
       if: env.PACKAGED_STATUS == 'success'
       with:
@@ -171,13 +179,11 @@ jobs:
         file_glob: true
         overwrite: true
         body: |
-          ## Extracted Firmware
-          - **Source URL**: ${{ github.event.inputs.img_url }}
-          - **File Type**: ${{ github.event.inputs.type_file }}
-          - **Name Prefix**: ${{ github.event.inputs.rename }}
-          - **Date**: $(date -u)
+          Source: ${{ github.event.inputs.img_url }}
+          Type: ${{ github.event.inputs.type_file }}
+          Prefix: ${{ github.event.inputs.rename }}
 
-    - name: Cleanup old workflow runs (keep last 3, retain 1 day)
+    - name: Cleanup old runs
       uses: GitRML/delete-workflow-runs@main
       with:
         retain_days: 1
