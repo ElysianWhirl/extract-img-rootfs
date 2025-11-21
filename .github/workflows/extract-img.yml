@@ -41,18 +41,21 @@ jobs:
 
     - name: Set up environment
       run: |
-        sudo timedatectl set-timezone "$TZ"
-        sudo apt-get update -qq
-        sudo apt-get install -y wget python3 python3-pip p7zip-full
-        pip3 install --no-cache-dir gdown
-        # Install mediafire_rs via cargo
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        export PATH="$HOME/.cargo/bin:$PATH"
-        cargo install mediafire_rs --locked
-        # Install MegaCMD
-        DISTRIB_RELEASE=$(lsb_release -rs)
-        wget -q "https://mega.nz/linux/repo/xUbuntu_${DISTRIB_RELEASE}/amd64/megacmd-xUbuntu_${DISTRIB_RELEASE}_amd64.deb"
-        sudo apt install -y ./megacmd-xUbuntu_${DISTRIB_RELEASE}_amd64.deb
+      sudo timedatectl set-timezone "$TZ"
+      sudo apt-get update -qq
+      sudo apt-get install -y wget python3 python3-pip
+
+      # Install Rust & mediafire_rs
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+      echo "$HOME/.cargo/bin" >> $GITHUB_PATH  # ← Ini penting!
+      export PATH="$HOME/.cargo/bin:$PATH"     # ← Untuk session ini
+
+      cargo install --locked mediafire_rs
+
+      # Install MegaCMD
+      DISTRIB_RELEASE=$(lsb_release -rs)
+      wget -q "https://mega.nz/linux/repo/xUbuntu_${DISTRIB_RELEASE}/amd64/megacmd-xUbuntu_${DISTRIB_RELEASE}_amd64.deb"
+      sudo apt install -y ./megacmd-xUbuntu_${DISTRIB_RELEASE}_amd64.deb
 
     - name: Download image file
       env:
